@@ -13,5 +13,5 @@ A powerful and intelligent command-line **Network Intrusion Detection System (NI
 - 🔁 **Cross-Validation**: Implements 5-fold cross-validation for robust evaluation.
 - 📊 **Detailed Analytics**: Outputs precision, recall, accuracy, and confusion matrices.
 - 🎨 **Colorful CLI Interface**: Enhances UX with a stylish terminal-based output.
-- ⚡ **Fast & Easy to Use**: Just provide your datasets, and it does the rest.
+- ⚡ **Fast & Easy to Use**: Just provide your datasets, and it does the rest
 
