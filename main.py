@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-0XVENOM - Network Intrusion Detection System (NIDS)
+NIDS Detection Model - Network Intrusion Detection System
 Detects malicious and unauthorized access in computer networks using Machine Learning.
 Author: Adarsh Kumar Singh
 
@@ -168,19 +168,27 @@ class PacketCapture:
         if not SCAPY_AVAILABLE:
             print("Scapy not available. Cannot start packet capture.")
             return False
+        if self.is_capturing:
+            return True
 
         self.is_capturing = True
 
         def capture_worker():
             try:
-                sniff(
-                    iface=self.interface,
-                    prn=self.packet_handler,
-                    count=packet_count,
-                    stop_filter=lambda x: not self.is_capturing
-                )
+                captured = 0
+                while self.is_capturing and (not packet_count or captured < packet_count):
+                    sniff(
+                        iface=self.interface,
+                        prn=self.packet_handler,
+                        count=1,
+                        timeout=1,
+                        store=False,
+                    )
+                    captured += 1
             except Exception as e:
                 print(f"Capture error: {e}")
+            finally:
+                self.is_capturing = False
 
         self.capture_thread = threading.Thread(target=capture_worker)
         self.capture_thread.daemon = True
@@ -272,7 +280,7 @@ class ModelManager:
                     continue
         return sorted(models, key=lambda x: x['timestamp'], reverse=True)
 
-class VenomNIDS:
+class NIDSDetector:
     def __init__(self):
         self.models = {}
         self.selected_features = []
@@ -289,7 +297,7 @@ class VenomNIDS:
         self.best_model_name = None
 
     def print_banner(self):
-        """Display the 0XVENOM banner"""
+        """Display the NIDS Detection Model banner."""
         banner = f"""
 {Fore.RED}╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
@@ -300,7 +308,7 @@ class VenomNIDS:
 ║  {Fore.GREEN} ╚██████╔╝██╔╝ ██╗ ╚████╔╝ ███████╗██║ ╚████║╚██████╔╝██║ ╚═╝ ██║        {Fore.RED}║
 ║  {Fore.GREEN}  ╚═════╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝        {Fore.RED}║
 ║                                                                              ║
-║  {Fore.CYAN}            Network Intrusion Detection System (NIDS)                    {Fore.RED}║
+║  {Fore.CYAN}            NIDS Detection Model (NIDS)                               {Fore.RED}║
 ║  {Fore.YELLOW}        Enhanced with Real-time Monitoring & Web Interface             {Fore.RED}║
 ║  {Fore.MAGENTA}                    Author: Adarsh Kumar Singh                          {Fore.RED}║
 ║                                                                              ║
@@ -724,27 +732,27 @@ class VenomNIDS:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="0XVENOM - Enhanced Network Intrusion Detection System",
+        description="NIDS Detection Model - Network Intrusion Detection System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Train models
-  python 0xvenom.py --train data/train.csv --test data/test.csv
+  python main.py --train data/train.csv --test data/test.csv
 
   # Train with detailed analysis
-  python 0xvenom.py --train data/train.csv --test data/test.csv --detailed
+  python main.py --train data/train.csv --test data/test.csv --detailed
 
   # Start web interface
-  python 0xvenom.py --web
+  python main.py --web
 
   # Real-time monitoring
-  python 0xvenom.py --monitor --duration 300 --interface eth0
+  python main.py --monitor --duration 300 --interface eth0
 
   # List saved models
-  python 0xvenom.py --list-models
+  python main.py --list-models
 
   # Load and use saved model for monitoring
-  python 0xvenom.py --load-model models/random_forest_20240101_120000.joblib --monitor
+  python main.py --load-model models/random_forest_20240101_120000.joblib --monitor
         """
     )
 
@@ -758,7 +766,7 @@ Examples:
     parser.add_argument('--list-models', action='store_true', help='List saved models')
     parser.add_argument('--load-model', help='Load a saved model')
     parser.add_argument('--no-save', action='store_true', help='Don\'t save trained models')
-    parser.add_argument('--version', action='version', version='0XVENOM v2.0 - Enhanced NIDS')
+    parser.add_argument('--version', action='version', version='NIDS Detection Model 1.0')
 
     args = parser.parse_args()
 
@@ -766,13 +774,13 @@ Examples:
     warnings.filterwarnings('ignore')
 
     # Initialize NIDS
-    nids = VenomNIDS()
+    nids = NIDSDetector()
 
     # Handle different modes
     if args.web:
         # Start web interface
         nids.print_status("Starting web interface...", "INFO")
-        os.system("streamlit run web_interface.py")
+        os.system("streamlit run nids_web.py")
 
     elif args.list_models:
         # List saved models

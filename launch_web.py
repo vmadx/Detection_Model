@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple launcher for 0XVENOM Web Interface
+Simple launcher for the NIDS Detection Model web interface
 This script ensures proper imports and launches the Streamlit app
 """
 
@@ -13,7 +13,7 @@ def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Path to the web interface script
-    web_script = os.path.join(current_dir, "web_interface.py")
+    web_script = os.path.join(current_dir, "nids_web.py")
 
     # Check if the web interface file exists
     if not os.path.exists(web_script):
@@ -26,7 +26,7 @@ def main():
 
     # Launch Streamlit
     try:
-        print("🚀 Starting 0XVENOM Web Interface...")
+        print("🚀 Starting NIDS Detection Model web interface...")
         print("🌐 Open your browser and go to: http://localhost:8501")
         print("⏹️  Press Ctrl+C to stop the server")
 
@@ -38,7 +38,7 @@ def main():
         ], env=env)
 
     except KeyboardInterrupt:
-        print("\n👋 Shutting down 0XVENOM Web Interface...")
+        print("\n👋 Shutting down NIDS Detection Model web interface...")
     except Exception as e:
         print(f"❌ Error starting web interface: {e}")
 

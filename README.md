@@ -1,4 +1,4 @@
-# 0XVENOM - Network Intrusion Detection System (NIDS) 🐍
+# NIDS Detection Model 🛡️
 
 A powerful and intelligent command-line **Network Intrusion Detection System (NIDS)** using **Machine Learning**, designed to detect unauthorized and malicious network activities with high accuracy.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Core classes for 0XVENOM NIDS
+Core classes for the NIDS Detection Model
 Separated for better modularity and web interface integration
 """
 
@@ -44,6 +44,7 @@ class PacketCapture:
         self.packet_queue = queue.Queue()
         self.is_capturing = False
         self.capture_thread = None
+        self.capture_error = None
 
     def extract_features(self, packet):
         """Extract features from network packet"""
@@ -154,19 +155,29 @@ class PacketCapture:
         """Start packet capture"""
         if not SCAPY_AVAILABLE:
             return False
+        if self.is_capturing:
+            return True
 
+        self.capture_error = None
         self.is_capturing = True
 
         def capture_worker():
             try:
-                sniff(
-                    iface=self.interface,
-                    prn=self.packet_handler,
-                    count=packet_count,
-                    stop_filter=lambda x: not self.is_capturing
-                )
+                captured = 0
+                while self.is_capturing and (not packet_count or captured < packet_count):
+                    sniff(
+                        iface=self.interface,
+                        prn=self.packet_handler,
+                        count=1,
+                        timeout=1,
+                        store=False,
+                    )
+                    captured += 1
             except Exception as e:
+                self.capture_error = str(e)
                 print(f"Capture error: {e}")
+            finally:
+                self.is_capturing = False
 
         self.capture_thread = threading.Thread(target=capture_worker)
         self.capture_thread.daemon = True
@@ -261,7 +272,7 @@ class ModelManager:
                     continue
         return sorted(models, key=lambda x: x['timestamp'], reverse=True)
 
-class VenomNIDS:
+class NIDSDetector:
     def __init__(self):
         self.models = {}
         self.selected_features = []
