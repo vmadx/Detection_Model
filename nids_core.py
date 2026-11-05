@@ -28,7 +28,7 @@ from colorama import Fore, Back, Style
 
 # Network packet capture imports
 try:
-    from scapy.all import sniff, IP, TCP, UDP, ICMP
+    from scapy.all import get_if_list, sniff, IP, TCP, UDP, ICMP
     SCAPY_AVAILABLE = True
 except ImportError:
     SCAPY_AVAILABLE = False
@@ -154,6 +154,7 @@ class PacketCapture:
     def start_capture(self, packet_count=0):
         """Start packet capture"""
         if not SCAPY_AVAILABLE:
+            self.capture_error = "Scapy is not installed."
             return False
         if self.is_capturing:
             return True
@@ -184,6 +185,20 @@ class PacketCapture:
         self.capture_thread.start()
 
         return True
+
+    @staticmethod
+    def available_interfaces():
+        """Return interfaces visible to Scapy, or an empty list on failure."""
+        if not SCAPY_AVAILABLE:
+            return []
+        try:
+            return sorted(get_if_list())
+        except Exception:
+            return []
+
+    @staticmethod
+    def scapy_available():
+        return SCAPY_AVAILABLE
 
     def stop_capture(self):
         """Stop packet capture"""

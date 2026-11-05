@@ -10,6 +10,9 @@ import numpy as np
 import plotly.express as px
 import time
 import json
+import subprocess
+import threading
+import queue
 from datetime import datetime
 import os
 import sys
@@ -25,11 +28,8 @@ sys.path.insert(0, parent_dir)
 try:
     from nids_core import NIDSDetector, PacketCapture, ModelManager
 except ImportError:
-    try:
-        from nids_core import NIDSDetector, PacketCapture, ModelManager
-    except ImportError:
-        st.error("❌ Could not import NIDS detector classes. Please check the installation.")
-        st.stop()
+    st.error("❌ Could not import NIDS detector classes. Please check the installation.")
+    st.stop()
 
 # Page configuration
 st.set_page_config(
@@ -88,6 +88,12 @@ if 'capture_interface' not in st.session_state:
     st.session_state.capture_interface = None
 if 'capture_error' not in st.session_state:
     st.session_state.capture_error = None
+if 'traffic_process' not in st.session_state:
+    st.session_state.traffic_process = None
+if 'verbose_logs' not in st.session_state:
+    st.session_state.verbose_logs = []
+if 'traffic_output' not in st.session_state:
+    st.session_state.traffic_output = queue.Queue()
 
 def main():
     # Header
@@ -276,17 +282,38 @@ def monitoring_page():
     # Monitoring controls
     col1, col2, col3 = st.columns(3)
 
+    interfaces = ["auto"] + PacketCapture.available_interfaces()
     with col2:
-        interface = st.selectbox("Network Interface", ["auto", "eth0", "wlan0", "lo"])
+        interface = st.selectbox("Network Interface", interfaces)
 
     with col3:
         duration = st.number_input("Duration (seconds)", min_value=10, max_value=3600, value=60)
+
+    generate_traffic = st.checkbox(
+        "Generate test traffic while monitoring",
+        value=True,
+        help="Runs ping safely in the background so the capture has traffic to inspect.",
+    )
+    ping_target = st.text_input("Ping target", value="8.8.8.8", disabled=not generate_traffic)
+    ping_count = st.number_input(
+        "Ping packets",
+        min_value=1,
+        max_value=100,
+        value=10,
+        disabled=not generate_traffic,
+    )
 
     with col1:
         if not st.session_state.monitoring_active:
             if st.button("▶️ Start Monitoring", type="primary"):
                 if st.session_state.nids.best_model:
-                    start_monitoring(interface, duration)
+                    start_monitoring(
+                        interface,
+                        duration,
+                        generate_traffic,
+                        ping_target,
+                        ping_count,
+                    )
                 else:
                     st.error("❌ No trained model available. Please train or load a model first.")
         else:
@@ -300,6 +327,12 @@ def monitoring_page():
         st.info("🔴 Monitoring Inactive")
 
     monitoring_live_data()
+
+    with st.expander("Verbose capture diagnostics", expanded=True):
+        if st.session_state.verbose_logs:
+            st.code("\n".join(st.session_state.verbose_logs[-20:]))
+        else:
+            st.info("Start monitoring to collect diagnostics.")
 
     # Packet analysis
     if st.session_state.packet_data:
@@ -487,18 +520,46 @@ def settings_page():
         st.session_state.alerts.clear()
         st.success("Captured data and alerts cleared.")
 
-def start_monitoring(interface, duration):
+def log_message(message):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    st.session_state.verbose_logs.append(f"[{timestamp}] {message}")
+
+def start_monitoring(interface, duration, generate_traffic, ping_target, ping_count):
     """Start real-time monitoring using the selected interface and duration."""
     interface = None if interface == "auto" else interface
+    st.session_state.verbose_logs.clear()
+    log_message(f"Requested interface: {interface or 'Scapy default interface'}")
+    log_message(f"Scapy available: {PacketCapture.scapy_available()}")
+    if hasattr(os, "geteuid"):
+        running_as_root = os.geteuid() == 0
+        log_message(f"Running as root: {running_as_root}")
+        if not running_as_root:
+            log_message(
+                "Fallback: packet capture may require sudo or CAP_NET_RAW/CAP_NET_ADMIN."
+            )
+    if interface and interface not in PacketCapture.available_interfaces():
+        st.error(f"Interface '{interface}' is not visible to Scapy.")
+        log_message("START FAILED: selected interface is unavailable.")
+        return
     st.session_state.monitoring_active = True
     st.session_state.monitoring_end_time = time.time() + duration
     st.session_state.capture_interface = interface
     st.session_state.nids.packet_capture = PacketCapture(interface)
     if not st.session_state.nids.packet_capture.start_capture():
         st.session_state.monitoring_active = False
-        st.error("❌ Could not start packet capture. Check Scapy and interface permissions.")
+        error = st.session_state.nids.packet_capture.capture_error or "unknown capture error"
+        log_message(f"START FAILED: {error}")
+        st.error(
+            "❌ Could not start packet capture. Run the launcher with sudo or grant "
+            "packet-capture permissions, then check the selected interface."
+        )
         return
     st.session_state.capture_error = None
+    log_message("Packet capture thread started.")
+    if generate_traffic:
+        start_test_traffic(ping_target, ping_count, duration)
+    else:
+        log_message("Test traffic generation disabled; create traffic separately.")
     st.success("✅ Monitoring started!")
 
 def stop_monitoring():
@@ -507,16 +568,76 @@ def stop_monitoring():
     st.session_state.monitoring_active = False
     st.session_state.monitoring_end_time = None
     st.session_state.capture_interface = None
+    process = st.session_state.traffic_process
+    if process and process.poll() is None:
+        process.terminate()
+        log_message("Stopped background test traffic.")
+    st.session_state.traffic_process = None
     st.info("ℹ️ Monitoring stopped.")
+
+def start_test_traffic(target, count, duration):
+    """Generate bounded ping traffic without invoking a shell."""
+    target = target.strip()
+    if not target or any(character.isspace() for character in target):
+        log_message("Test traffic skipped: target must be a hostname or IP without spaces.")
+        st.warning("Ping target must be a hostname or IP address without spaces.")
+        return
+    command = ["ping", "-c", str(int(count)), "-W", "1", target]
+    log_message(f"Starting test traffic: {' '.join(command)}")
+    output_queue = st.session_state.traffic_output
+
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except FileNotFoundError:
+        log_message("Ping unavailable: install the system ping utility.")
+        return
+    except Exception as error:
+        log_message(f"Ping failed to start: {error}")
+        return
+
+    st.session_state.traffic_process = process
+
+    def run_ping():
+        try:
+            output, _ = process.communicate(timeout=max(10, int(duration)))
+            output_queue.put(f"Ping exited with code {process.returncode}.")
+            for line in output.splitlines()[-5:]:
+                output_queue.put(f"ping: {line}")
+        except subprocess.TimeoutExpired:
+            process.kill()
+            output_queue.put("Ping timed out and was stopped.")
+        except Exception as error:
+            output_queue.put(f"Ping failed: {error}")
+
+    threading.Thread(target=run_ping, daemon=True).start()
 
 def process_captured_packets():
     """Drain captured packets, classify them, and persist the real results."""
+    while True:
+        try:
+            log_message(st.session_state.traffic_output.get_nowait())
+        except queue.Empty:
+            break
     if not st.session_state.monitoring_active:
         return
     if st.session_state.monitoring_end_time and time.time() >= st.session_state.monitoring_end_time:
         stop_monitoring()
         return
-    for packet in st.session_state.nids.packet_capture.get_packets():
+    packets = st.session_state.nids.packet_capture.get_packets()
+    if packets:
+        log_message(f"Processed {len(packets)} captured packet(s).")
+    elif not st.session_state.nids.packet_capture.is_capturing:
+        error = st.session_state.nids.packet_capture.capture_error
+        if error:
+            log_message(f"Capture stopped with error: {error}")
+        else:
+            log_message("Capture is not running and no packets are queued.")
+    for packet in packets:
         prediction, confidence = st.session_state.nids.classify_packet(packet['features'])
         packet['prediction'] = prediction
         packet['confidence'] = confidence
@@ -561,6 +682,13 @@ def render_monitoring_data():
     col3.metric("Anomalies", anomaly)
     if st.session_state.nids.packet_capture.capture_error:
         st.error(f"Packet capture stopped: {st.session_state.nids.packet_capture.capture_error}")
+    elif st.session_state.monitoring_active and not frame.empty:
+        st.caption("Packets are being captured from the selected interface.")
+    elif st.session_state.monitoring_active:
+        st.warning(
+            "0 packets captured yet. Verify the interface, permissions, and diagnostics above. "
+            "The built-in ping test should appear in the diagnostics when it runs."
+        )
     if st.session_state.alerts:
         st.subheader("🚨 Recent Alerts")
         st.dataframe(pd.DataFrame(st.session_state.alerts[-10:]), use_container_width=True)
