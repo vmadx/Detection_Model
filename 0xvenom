@@ -83,5 +83,5 @@ else
     fi
     
     # Run the Python script with all arguments
-    python3 "$SCRIPT_DIR/scripts/0xvenom.py" "$@"
+    python3 "$SCRIPT_DIR/0xvenom.py" "$@"
 fi

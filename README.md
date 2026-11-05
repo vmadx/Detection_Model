@@ -8,10 +8,9 @@ A powerful and intelligent command-line **Network Intrusion Detection System (NI
 
 ## 🚀 Features
 
-- ✅ **Multi-Algorithm Detection**: Supports Logistic Regression, K-Nearest Neighbors, and Decision Tree models.
+- ✅ **Random Forest Detection**: Uses a single Random Forest classifier for consistent training and monitoring.
 - 🧠 **Automated Feature Selection**: Utilizes Random Forest and Recursive Feature Elimination (RFE) for intelligent feature selection.
 - 🔁 **Cross-Validation**: Implements 5-fold cross-validation for robust evaluation.
 - 📊 **Detailed Analytics**: Outputs precision, recall, accuracy, and confusion matrices.
 - 🎨 **Colorful CLI Interface**: Enhances UX with a stylish terminal-based output.
 - ⚡ **Fast & Easy to Use**: Just provide your datasets, and it does the rest
-
